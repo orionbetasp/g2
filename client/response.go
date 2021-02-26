@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	rt "github.com/appscode/g2/pkg/runtime"
+	rt "github.com/orionbetasp/g2/pkg/runtime"
 )
 
 // Response handler

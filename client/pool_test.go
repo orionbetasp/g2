@@ -1,9 +1,11 @@
 package client
 
 import (
+	"context"
 	"testing"
+	"time"
 
-	"github.com/appscode/g2/pkg/runtime"
+	"github.com/orionbetasp/g2/pkg/runtime"
 )
 
 var (
@@ -43,7 +45,9 @@ func TestPoolEcho(t *testing.T) {
 }
 
 func TestPoolDoBg(t *testing.T) {
-	addr, handle, err := pool.DoBg("ToUpper",
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addr, handle, err := pool.DoBg(ctx, "ToUpper",
 		[]byte("abcdef"), runtime.JobLow)
 	if err != nil {
 		t.Error(err)
@@ -66,7 +70,9 @@ func TestPoolDo(t *testing.T) {
 		}
 		return
 	}
-	addr, handle, err := pool.Do("ToUpper",
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addr, handle, err := pool.Do(ctx, "ToUpper",
 		[]byte("abcdef"), runtime.JobLow, jobHandler)
 	if err != nil {
 		t.Error(err)
@@ -90,7 +96,10 @@ func TestPoolStatus(t *testing.T) {
 	if status.Running {
 		t.Errorf("The job (%s) shouldn't be running.", status.Handle)
 	}
-	addr, handle, err := pool.Do("Delay5sec",
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addr, handle, err := pool.Do(ctx, "Delay5sec",
 		[]byte("abcdef"), runtime.JobLow, nil)
 	if err != nil {
 		t.Error(err)

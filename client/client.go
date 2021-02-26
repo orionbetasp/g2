@@ -4,19 +4,15 @@ package client
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
-	"time"
 
-	rt "github.com/appscode/g2/pkg/runtime"
-	"github.com/appscode/go/log"
-)
-
-var (
-	DefaultTimeout time.Duration = time.Second
+	rt "github.com/orionbetasp/g2/pkg/runtime"
 )
 
 // One client connect to one server.
@@ -30,9 +26,6 @@ type Client struct {
 	in           chan *Response
 	conn         net.Conn
 	rw           *bufio.ReadWriter
-
-	ResponseTimeout time.Duration // response timeout for do()
-
 	ErrorHandler ErrorHandler
 }
 
@@ -66,12 +59,11 @@ func (r *responseHandlerMap) put(key string, rh ResponseHandler) {
 // Return a client.
 func New(network, addr string) (client *Client, err error) {
 	client = &Client{
-		net:             network,
-		addr:            addr,
-		respHandler:     newResponseHandlerMap(),
-		innerHandler:    newResponseHandlerMap(),
-		in:              make(chan *Response, rt.QueueSize),
-		ResponseTimeout: DefaultTimeout,
+		net:          network,
+		addr:         addr,
+		respHandler:  newResponseHandlerMap(),
+		innerHandler: newResponseHandlerMap(),
+		in:           make(chan *Response, rt.QueueSize),
 	}
 	client.conn, err = net.Dial(client.net, client.addr)
 	if err != nil {
@@ -172,7 +164,7 @@ func (client *Client) processLoop() {
 	for resp := range client.in {
 		switch resp.DataType {
 		case rt.PT_Error:
-			log.Errorln("Received error", resp.Data)
+			log.Println("Received error", resp.Data)
 			client.err(getError(resp.Data))
 		case rt.PT_StatusRes:
 			resp = client.handleInner("s"+resp.Handle, resp)
@@ -217,7 +209,7 @@ type handleOrError struct {
 	err    error
 }
 
-func (client *Client) do(funcname string, data []byte, flag rt.PT) (handle string, err error) {
+func (client *Client) do(ctx context.Context, funcname string, data []byte, flag rt.PT) (handle string, err error) {
 	if client.conn == nil {
 		return "", ErrLostConn
 	}
@@ -240,11 +232,11 @@ func (client *Client) do(funcname string, data []byte, flag rt.PT) (handle strin
 		client.innerHandler.remove("c")
 		return
 	}
-	var timer = time.After(client.ResponseTimeout)
+
 	select {
 	case ret := <-result:
 		return ret.handle, ret.err
-	case <-timer:
+	case <-ctx.Done():
 		client.innerHandler.remove("c")
 		return "", ErrLostConn
 	}
@@ -253,7 +245,7 @@ func (client *Client) do(funcname string, data []byte, flag rt.PT) (handle strin
 
 // Call the function and get a response.
 // flag can be set to: JobLow, JobNormal and JobHigh
-func (client *Client) Do(funcname string, data []byte,
+func (client *Client) Do(ctx context.Context, funcname string, data []byte,
 	flag byte, h ResponseHandler) (handle string, err error) {
 	var datatype rt.PT
 	switch flag {
@@ -264,7 +256,7 @@ func (client *Client) Do(funcname string, data []byte,
 	default:
 		datatype = rt.PT_SubmitJob
 	}
-	handle, err = client.do(funcname, data, datatype)
+	handle, err = client.do(ctx, funcname, data, datatype)
 	if err == nil && h != nil {
 		client.respHandler.put(handle, h)
 	}
@@ -273,7 +265,7 @@ func (client *Client) Do(funcname string, data []byte,
 
 // Call the function in background, no response needed.
 // flag can be set to: JobLow, JobNormal and JobHigh
-func (client *Client) DoBg(funcname string, data []byte, flag byte) (handle string, err error) {
+func (client *Client) DoBg(ctx context.Context, funcname string, data []byte, flag byte) (handle string, err error) {
 	var datatype rt.PT
 	switch flag {
 	case rt.JobLow:
@@ -283,25 +275,25 @@ func (client *Client) DoBg(funcname string, data []byte, flag byte) (handle stri
 	default:
 		datatype = rt.PT_SubmitJobBG
 	}
-	handle, err = client.do(funcname, data, datatype)
+	handle, err = client.do(ctx, funcname, data, datatype)
 	return
 }
 
-func (client *Client) DoCron(funcname string, cronExpr string, funcParam []byte) (string, error) {
+func (client *Client) DoCron(ctx context.Context, funcname string, cronExpr string, funcParam []byte) (string, error) {
 	cf := strings.Fields(cronExpr)
 	expLen := len(cf)
 	switch expLen {
 	case 5:
-		return client.doCron(funcname, cronExpr, funcParam)
+		return client.doCron(ctx, funcname, cronExpr, funcParam)
 	case 6:
 		if cf[5] == "*" {
-			return client.doCron(funcname, strings.Join([]string{cf[0], cf[1], cf[2], cf[3], cf[4]}, " "), funcParam)
+			return client.doCron(ctx, funcname, strings.Join([]string{cf[0], cf[1], cf[2], cf[3], cf[4]}, " "), funcParam)
 		} else {
 			epoch, err := ToEpoch(strings.Join([]string{cf[0], cf[1], cf[2], cf[3], cf[5]}, " "))
 			if err != nil {
 				return "", err
 			}
-			return client.DoAt(funcname, epoch, funcParam)
+			return client.DoAt(ctx, funcname, epoch, funcParam)
 		}
 	default:
 		return "", errors.New("invalid cron expression")
@@ -309,22 +301,22 @@ func (client *Client) DoCron(funcname string, cronExpr string, funcParam []byte)
 	}
 }
 
-func (client *Client) doCron(funcname string, cronExpr string, funcParam []byte) (handle string, err error) {
+func (client *Client) doCron(ctx context.Context, funcname string, cronExpr string, funcParam []byte) (handle string, err error) {
 	ce, err := rt.NewCronSchedule(cronExpr)
 	if err != nil {
 		return "", err
 	}
 	dbyt := []byte(fmt.Sprintf("%v%v", string(ce.Bytes()), string(funcParam)))
-	handle, err = client.do(funcname, dbyt, rt.PT_SubmitJobSched)
+	handle, err = client.do(ctx, funcname, dbyt, rt.PT_SubmitJobSched)
 	return
 }
 
-func (client *Client) DoAt(funcname string, epoch int64, funcParam []byte) (handle string, err error) {
+func (client *Client) DoAt(ctx context.Context, funcname string, epoch int64, funcParam []byte) (handle string, err error) {
 	if client.conn == nil {
 		return "", ErrLostConn
 	}
 	dbyt := []byte(fmt.Sprintf("%v\x00%v", epoch, string(funcParam)))
-	handle, err = client.do(funcname, dbyt, rt.PT_SubmitJobEpoch)
+	handle, err = client.do(ctx, funcname, dbyt, rt.PT_SubmitJobEpoch)
 	return
 }
 
