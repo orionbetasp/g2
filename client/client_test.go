@@ -1,13 +1,14 @@
 package client
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"sync"
 	"testing"
 	"time"
 
-	rt "github.com/appscode/g2/pkg/runtime"
-	"github.com/appscode/go/log"
+	rt "github.com/orionbetasp/g2/pkg/runtime"
 )
 
 const (
@@ -50,7 +51,9 @@ func TestClientEcho(t *testing.T) {
 }
 
 func TestClientDoBg(t *testing.T) {
-	handle, err := client.DoBg("scheduledJobTest", []byte("abcdef"), rt.JobNormal)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handle, err := client.DoBg(ctx, "scheduledJobTest", []byte("abcdef"), rt.JobNormal)
 	if err != nil {
 		t.Error(err)
 		return
@@ -63,7 +66,9 @@ func TestClientDoBg(t *testing.T) {
 }
 
 func TestClientDoCron(t *testing.T) {
-	handle, err := client.DoCron("scheduledJobTest", "* * * * 5", []byte("test data"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handle, err := client.DoCron(ctx, "scheduledJobTest", "* * * * 5", []byte("test data"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +80,9 @@ func TestClientDoCron(t *testing.T) {
 }
 
 func TestClientDoAt(t *testing.T) {
-	handle, err := client.DoAt("scheduledJobTest", time.Now().Add(20*time.Second).Unix(), []byte("test data"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handle, err := client.DoAt(ctx, "scheduledJobTest", time.Now().Add(20*time.Second).Unix(), []byte("test data"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +114,11 @@ func TestClientDo(t *testing.T) {
 			fmt.Printf("Work status, num: %v, denom: %v\n", status.Numerator, status.Denominator)
 		}
 	}
-	handle, err := client.Do("scheduledJobTest", []byte("abcdef"),
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	handle, err := client.Do(ctx, "scheduledJobTest", []byte("abcdef"),
 		rt.JobHigh, jobHandler)
 	if err != nil {
 		t.Error(err)
@@ -137,7 +148,9 @@ func TestClientStatus(t *testing.T) {
 		return
 	}
 
-	handle, err := client.Do("Delay5sec", []byte("abcdef"), rt.JobLow, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handle, err := client.Do(ctx, "Delay5sec", []byte("abcdef"), rt.JobLow, nil)
 	if err != nil {
 		t.Error(err)
 		return

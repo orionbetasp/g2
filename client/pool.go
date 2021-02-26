@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"sync"
@@ -24,12 +25,16 @@ type SelectionHandler func(map[string]*PoolClient, string) string
 
 func SelectWithRate(pool map[string]*PoolClient,
 	last string) (addr string) {
-	total := 0
+	all := 0
 	for _, item := range pool {
-		total += item.Rate
-		if rand.Intn(total) < item.Rate {
+		all += item.Rate
+	}
+
+	for _, item := range pool {
+		if rand.Intn(all) < item.Rate {
 			return item.addr
 		}
+		all -= item.Rate
 	}
 	return last
 }
@@ -91,22 +96,22 @@ func (pool *Pool) Remove(addr string) {
 	delete(pool.Clients, addr)
 }
 
-func (pool *Pool) Do(funcname string, data []byte,
+func (pool *Pool) Do(ctx context.Context, funcname string, data []byte,
 	flag byte, h ResponseHandler) (addr, handle string, err error) {
 	client := pool.selectServer()
 	client.Lock()
 	defer client.Unlock()
-	handle, err = client.Do(funcname, data, flag, h)
+	handle, err = client.Do(ctx, funcname, data, flag, h)
 	addr = client.addr
 	return
 }
 
-func (pool *Pool) DoBg(funcname string, data []byte,
+func (pool *Pool) DoBg(ctx context.Context, funcname string, data []byte,
 	flag byte) (addr, handle string, err error) {
 	client := pool.selectServer()
 	client.Lock()
 	defer client.Unlock()
-	handle, err = client.DoBg(funcname, data, flag)
+	handle, err = client.DoBg(ctx, funcname, data, flag)
 	addr = client.addr
 	return
 }

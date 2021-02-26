@@ -3,7 +3,7 @@ package client
 import (
 	"encoding/binary"
 
-	rt "github.com/appscode/g2/pkg/runtime"
+	rt "github.com/orionbetasp/g2/pkg/runtime"
 )
 
 // Request from client
